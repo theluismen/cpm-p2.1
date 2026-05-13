@@ -12,8 +12,8 @@ void kmean(int fN, int fK, long fV[], long fR[], int fA[])
 {
     int i, j, min, iter = 0;
     long dif, t, dif2;
-    long fS[G];
-    int fD[N];
+    long fS[G]; // Suma de valores de cada grupo
+    int fD[N];  // fD[i] = g -> fD[i] pertenece al grupo g
 
     do
     {
