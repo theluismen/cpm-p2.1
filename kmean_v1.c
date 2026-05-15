@@ -6,18 +6,18 @@
 #define G 400       // Total de Grupos
 
 long *valores_g;    // Vector de los N valores ( rank=0 )
-long *valores_l;    // Vector de los N valores locales ( rank!=0 )
+long *valores_l;    // Vector de los N/nodos valores locales
 long centros[G];    // Vector para los centroides de cada grupo
-int  volumen[G];    // Vector para la cantidad de valores en cada grupo
+int  volumen_g[G];    // Vector para la cantidad de valores en cada grupo
 
-void kmean ( int n_valores, int n_grupos, long valores[], long centros[], int volumen_g[], int rank )
+void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], int volumen_g[], int rank )
 {
-    int   i, j, t, min, iter = 0;
-    long  dif_l, dif_g;         // Variables dif local y global
-    long  sumas_l[n_grupos];    // Suma de valores locales
-    long  sumas_g[n_grupos];    // Suma de valores globales
-    long  volumen_l[n_grupos];  // Cantidades de grupos locales
-    int   *grupos_l;            // grupos[i] = g -> grupos[i] pertenece al grupo g
+    int  i, j, min, iter = 0;   // Variables de ayuda
+    long dif_l, dif_g, t;       // Variables dif local, dif global y temporal
+    long sumas_l[n_grupos];     // Suma de valores locales
+    long sumas_g[n_grupos];     // Suma de valores globales
+    int  volumen_l[n_grupos];   // Cantidades de grupos locales
+    int  *grupos_l;             // grupos[i] = g -> grupos[i] pertenece al grupo g
 
     grupos_l = malloc(n_valores * sizeof(int));
 
@@ -49,7 +49,7 @@ void kmean ( int n_valores, int n_grupos, long valores[], long centros[], int vo
 
         for ( i = 0; i < n_valores; i++ )
         {
-            sumas_l[grupos_l[i]] = sumas_l[grupos_l[i]] + valores[i];
+            sumas_l[grupos_l[i]]   = sumas_l[grupos_l[i]] + valores[i];
             volumen_l[grupos_l[i]] = volumen_l[grupos_l[i]] + 1;
         }
 
@@ -75,7 +75,7 @@ void kmean ( int n_valores, int n_grupos, long valores[], long centros[], int vo
 
         iter++;
 
-    } while ( dif_l );
+    } while ( dif_g );
 
     if ( rank == 0 ) {
         printf("iter %d\n", iter);
@@ -136,6 +136,7 @@ void qs(int ii, int fi, long fV[], int fA[])
 
 int main ( int argc, char** argv )
 {
+    /* Variables */
     int i;
     int rank, nodos;
     int n_valores_l;    // Número de Valores Locales (N/nodos)
@@ -148,7 +149,7 @@ int main ( int argc, char** argv )
     /* Calcular Porciones de Datos*/
     n_valores_l = N / nodos;
     /* Asignar memoria a vector local de Valores */
-    valores_l = malloc( n_valores_l * sizeof(long) );
+    valores_l   = malloc( n_valores_l * sizeof(long) );
 
     /* Proceso ROOT */
     if ( rank == 0 ) {
@@ -169,17 +170,17 @@ int main ( int argc, char** argv )
     /* REPLICAR G Centroides a los nodes nodos */
     MPI_Bcast(centros, G, MPI_LONG, 0, MPI_COMM_WORLD);
 
-    // calcular los G más representativos
-    kmean(n_valores_l, G, valores_l, centros, volumen, rank);
+    /* Calcular G Grupos */
+    kmean_mpi(n_valores_l, G, valores_l, centros, volumen_g, rank);
 
     /* Proceso ROOT */
     if ( rank == 0 ) {
         /* Ordenar Centroides y Cantidades */
-        qs(0, G - 1, centros, volumen);
+        qs(0, G - 1, centros, volumen_g);
 
         /* Mostrar Resultados */
         for ( i = 0; i < G; i++ )
-            printf("R[%d] : %ld tiene %d agrupados\n", i, centros[i], volumen[i]);
+            printf("R[%d] : %ld tiene %d agrupados\n", i, centros[i], volumen_g[i]);
 
         /* Liberar Memoria Dinámica */
         free(valores_g);

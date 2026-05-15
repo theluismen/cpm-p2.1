@@ -5,124 +5,179 @@
 #define N 2000000   // Total de Valores
 #define G 400       // Total de Grupos
 
-// Usamos punteros para manejar memoria local en cada proceso
-long *valores_locales;
-long centros[G];
-int  volumen_global[G];
+long *valores_g;    // Vector de los N valores ( rank=0 )
+long *valores_l;    // Vector de los N/nodos valores locales
+long centros[G];    // Vector para los centroides de cada grupo
+int  volumen_g[G];    // Vector para la cantidad de valores en cada grupo
 
-void kmean_mpi(int n_total, int n_grupos, long centros[], int volumen_global[], int rank, int size) {
+void kmean_mpi(int n_valores, int n_grupos, long centros[], int volumen_g[], int rank)
+{
     int i, j, min, iter = 0;
-    long dif_local, dif_global, t;
-
-    // Cuántos elementos le tocan a este proceso
-    int n_locales = n_total / size;
-    long sumas_locales[G];
-    int volumen_local[G];
-    int *grupos_locales = malloc(n_locales * sizeof(int));
+    long dif_l, dif_g, t;
+    long sumas_l[G];
+    long sumas_g[G];
+    int volumen_l[G];
+    int *grupos_l = malloc(n_valores * sizeof(int));
 
     do {
         // 1. Fase de Clasificación: Cada proceso clasifica sus propios puntos
-        for (i = 0; i < n_locales; i++) {
+        for (i = 0; i < n_valores; i++) {
             min = 0;
-            long dist_min = abs(valores_locales[i] - centros[0]);
+            long dist_min = abs(valores_l[i] - centros[0]);
 
             for (j = 1; j < n_grupos; j++) {
-                long d = abs(valores_locales[i] - centros[j]);
+                long d = abs(valores_l[i] - centros[j]);
                 if (d < dist_min) {
                     min = j;
                     dist_min = d;
                 }
             }
-            grupos_locales[i] = min;
+            grupos_l[i] = min;
         }
 
         // 2. Reiniciar acumuladores locales
         for (i = 0; i < n_grupos; i++) {
-            sumas_locales[i] = 0;
-            volumen_local[i] = 0;
+            sumas_l[i] = 0;
+            volumen_l[i] = 0;
         }
 
         // 3. Acumular localmente
-        for (i = 0; i < n_locales; i++) {
-            sumas_locales[grupos_locales[i]] += valores_locales[i];
-            volumen_local[grupos_locales[i]] += 1;
+        for (i = 0; i < n_valores; i++) {
+            sumas_l[grupos_l[i]] += valores_l[i];
+            volumen_l[grupos_l[i]] += 1;
         }
 
         // 4. Comunicación Global: Reducción de sumas y volúmenes
-        long sumas_globales[G];
-        MPI_Allreduce(sumas_locales, sumas_globales, n_grupos, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
-        MPI_Allreduce(volumen_local, volumen_global, n_grupos, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(sumas_l, sumas_g, n_grupos, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(volumen_l, volumen_g, n_grupos, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
         // 5. Actualizar centros y calcular convergencia
-        dif_local = 0;
+        dif_l = 0;
         for (i = 0; i < n_grupos; i++) {
             t = centros[i];
-            if (volumen_global[i] > 0)
-                centros[i] = sumas_globales[i] / volumen_global[i];
+            if (volumen_g[i] > 0)
+                centros[i] = sumas_g[i] / volumen_g[i];
 
-            dif_local += abs(t - centros[i]);
+            dif_l += abs(t - centros[i]);
         }
 
         // Todos deben estar de acuerdo en si "dif" es 0 para parar
-        MPI_Allreduce(&dif_local, &dif_global, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&dif_l, &dif_g, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
 
         iter++;
-    } while (dif_global > 0);
+    } while (dif_g > 0);
 
     if (rank == 0) printf("Iteraciones totales: %d\n", iter);
-    free(grupos_locales);
+    free(grupos_l);
 }
 
-// Quicksort se mantiene igual (solo se ejecuta en el rank 0)
-void qs(int ii, int fi, long fV[], int fA[]) {
-    /* ... (tu código original de qs) ... */
-    int i, f; long pi, pa, vtmp, vta, vfi, vfa;
-    pi = fV[ii]; pa = fA[ii]; i = ii + 1; f = fi;
-    vtmp = fV[i]; vta = fA[i];
-    while (i <= f) {
-        if (vtmp < pi) { fV[i - 1] = vtmp; fA[i - 1] = vta; i++; vtmp = fV[i]; vta = fA[i]; }
-        else { vfi = fV[f]; vfa = fA[f]; fV[f] = vtmp; fA[f] = vta; f--; vtmp = vfi; vta = vfa; }
+void qs(int ii, int fi, long fV[], int fA[])
+{
+    int i, f;
+    long pi, pa, vtmp, vta, vfi, vfa;
+
+    pi = fV[ii];
+    pa = fA[ii];
+
+    i = ii + 1;
+    f = fi;
+
+    vtmp = fV[i];
+    vta = fA[i];
+
+    while (i <= f)
+    {
+        if (vtmp < pi)
+        {
+            fV[i - 1] = vtmp;
+            fA[i - 1] = vta;
+
+            i++;
+
+            vtmp = fV[i];
+            vta = fA[i];
+        }
+        else
+        {
+            vfi = fV[f];
+            vfa = fA[f];
+
+            fV[f] = vtmp;
+            fA[f] = vta;
+
+            f--;
+
+            vtmp = vfi;
+            vta = vfa;
+        }
     }
-    fV[i - 1] = pi; fA[i - 1] = pa;
-    if (ii < f) qs(ii, f, fV, fA);
-    if (i < fi) qs(i, fi, fV, fA);
+
+    fV[i - 1] = pi;
+    fA[i - 1] = pa;
+
+    if (ii < f)
+        qs(ii, f, fV, fA);
+
+    if (i < fi)
+        qs(i, fi, fV, fA);
 }
 
-int main(int argc, char** argv) {
-    int rank, size;
+int main(int argc, char** argv)
+{
+    int i;
+    int rank, nodos;
+    int n_valores_l;    // Número de Valores Locales (N/nodos)
+
+    /* Inicializar entorno MPI */
     MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // rank  : Identificador de nodo
+    MPI_Comm_size(MPI_COMM_WORLD, &nodos);  // nodes : Cantidad de nodos
 
-    int n_locales = N / size;
-    valores_locales = malloc(n_locales * sizeof(long));
+    /* Calcular Porciones de Datos*/
+    n_valores_l = N / nodos;
+    /* Asignar memoria a vector local de Valores */
+    valores_l = malloc( n_valores_l * sizeof(long) );
 
-    // Inicialización de datos
-    // Para que todos tengan datos coherentes, usamos la misma semilla o el rank 0 reparte
+    valores_g = NULL;
+    /* Proceso ROOT */
+    if ( rank == 0 ) {
+        /* Asignar memoria a vector global de Valores */
+        valores_g = malloc( N * sizeof(long) );
 
-    long *temp_full = NULL;
-    if (rank == 0) {
-        temp_full = malloc(N * sizeof(long));
-        for (int i = 0; i < N; i++) temp_full[i] = (rand() % rand()) / N;; // Simplificado para el ejemplo
-        for (int i = 0; i < G; i++) centros[i] = temp_full[i];
+        /* Inicializar N Valores */
+        for ( i = 0; i < N; i++ )
+            valores_g[i] = ( rand() % rand() ) / N;
+
+        /* Inicializar G centroides */
+        for ( i = 0; i < G; i++ )
+            centros[i] = valores_g[i];
     }
 
-    // Distribuir los datos y los centros iniciales
-    MPI_Scatter(temp_full, n_locales, MPI_LONG, valores_locales, n_locales, MPI_LONG, 0, MPI_COMM_WORLD);
+    /* PARTICIONAR N Valores entre nodes nodos */
+    MPI_Scatter(valores_g, n_valores_l, MPI_LONG, valores_l, n_valores_l, MPI_LONG, 0, MPI_COMM_WORLD);
+    /* REPLICAR G Centroides a los nodes nodos */
     MPI_Bcast(centros, G, MPI_LONG, 0, MPI_COMM_WORLD);
 
-    // Ejecutar K-Means paralelo
-    kmean_mpi(N, G, centros, volumen_global, rank, size);
+    // calcular los G más representativos
+    kmean_mpi(n_valores_l, G, centros, volumen_g, rank);
 
-    // Finalización
-    if (rank == 0) {
-        qs(0, G - 1, centros, volumen_global);
-        for (int i = 0; i < G; i++)
-            printf("R[%d] : %ld tiene %d agrupados\n", i, centros[i], volumen_global[i]);
-        free(temp_full);
+    /* Proceso ROOT */
+    if ( rank == 0 ) {
+        /* Ordenar Centroides y Cantidades */
+        qs(0, G - 1, centros, volumen_g);
+
+        /* Mostrar Resultados */
+        for ( i = 0; i < G; i++ )
+            printf("R[%d] : %ld tiene %d agrupados\n", i, centros[i], volumen_g[i]);
+
+        /* Liberar Memoria Dinámica */
+        free(valores_g);
     }
 
-    free(valores_locales);
+    /* Liberar Memoria Dinámica */
+    free(valores_l);
+    /* Terminar entorno de MPI */
     MPI_Finalize();
+
     return 0;
 }
