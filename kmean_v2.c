@@ -13,11 +13,13 @@ int  volumen_g[G];  // Vector para la cantidad de valores en cada grupo
 void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], int volumen_g[], int rank )
 {
     int  i, j, min, iter = 0;   // Variables de ayuda
-    long dif_l, dif_g, t;       // Variables dif local, dif global y temporal
+    long dif, t;                // Variables dif local, dif global y temporal
     long sumas_l[n_grupos];     // Suma de valores locales
     long sumas_g[n_grupos];     // Suma de valores globales
     int  volumen_l[n_grupos];   // Cantidades de grupos locales
     int  *grupos_l;             // grupos[i] = g -> grupos[i] pertenece al grupo g
+    int g;                      // Variable para menos acceso a memoria
+    int cambio_l, cambio_g;     // Variables de reducción de centroides
 
     grupos_l = malloc(n_valores * sizeof(int));
 
@@ -27,14 +29,15 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
         for ( i = 0; i < n_valores; i++ )
         {
             min = 0;
-            dif_l = abs(valores[i] - centros[0]);
+            dif = abs(valores[i] - centros[0]);
 
             for ( j = 1; j < n_grupos; j++ )
             {
-                if ( abs(valores[i] - centros[j]) < dif_l )
+                t = abs(valores[i] - centros[j]);
+                if ( t < dif )
                 {
                     min = j;
-                    dif_l = abs(valores[i] - centros[j]);
+                    dif = t;
                 }
             }
 
@@ -49,8 +52,9 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
 
         for ( i = 0; i < n_valores; i++ )
         {
-            sumas_l[grupos_l[i]]   = sumas_l[grupos_l[i]] + valores[i];
-            volumen_l[grupos_l[i]] = volumen_l[grupos_l[i]] + 1;
+            g = grupos_l[i];
+            sumas_l[g]   += valores[i];
+            volumen_l[g] += 1;
         }
 
         /* Reducir las sumas de datos locales a sumas de datos globales */
@@ -58,7 +62,7 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
         /* Reducir las volumenes de datos locales a volumenes de datos globales */
         MPI_Allreduce(volumen_l, volumen_g, n_grupos, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
-        dif_l = 0;
+        cambio_l = 0;
 
         for ( i = 0; i < n_grupos; i++ )
         {
@@ -67,15 +71,15 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
             if ( volumen_g[i] )
                 centros[i] = sumas_g[i] / volumen_g[i];
 
-            dif_l = dif_l + abs(t - centros[i]);
+            cambio_l = !!abs(t - centros[i]);
         }
 
         /* Reducir las dif locales a una dif global */
-        MPI_Allreduce(&dif_l, &dif_g, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&cambio_l, &cambio_g, 1, MPI_INT, MPI_LOR, MPI_COMM_WORLD);
 
         iter++;
 
-    } while ( dif_g );
+    } while ( cambio_g );
 
     if ( rank == 0 ) {
         printf("iter %d\n", iter);
