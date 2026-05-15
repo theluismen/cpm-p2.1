@@ -26,6 +26,12 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
     do
     {
         /**/
+        for ( i = 0; i < n_grupos; i++ )
+        {
+            sumas_l[i]   = 0;
+            volumen_l[i] = 0;
+        }
+
         for ( i = 0; i < n_valores; i++ )
         {
             min = 0;
@@ -42,19 +48,9 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
             }
 
             grupos_l[i] = min;
-        }
 
-        for ( i = 0; i < n_grupos; i++ )
-        {
-            sumas_l[i]   = 0;
-            volumen_l[i] = 0;
-        }
-
-        for ( i = 0; i < n_valores; i++ )
-        {
-            g = grupos_l[i];
-            sumas_l[g]   += valores[i];
-            volumen_l[g] += 1;
+            sumas_l[min]   += valores[i];
+            volumen_l[min] += 1;
         }
 
         /* Reducir las sumas de datos locales a sumas de datos globales */
@@ -62,7 +58,6 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
         /* Reducir las volumenes de datos locales a volumenes de datos globales */
         MPI_Allreduce(volumen_l, volumen_g, n_grupos, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
-        cambio_l = 0;
 
         for ( i = 0; i < n_grupos; i++ )
         {
@@ -71,16 +66,18 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
             if ( volumen_g[i] )
                 centros[i] = sumas_g[i] / volumen_g[i];
 
-            // cambio_l = !!abs(t - centros[i]); // rapido
-            cambio_l = cambio_l | !!abs(t - centros[i]);
+            //cambio_l = !!abs(t - centros[i]);
+            dif = dif + abs(t - centros[i]);
         }
 
+        cambio_l = ( dif != 0 ) ? 1 : 0;
+
         /* Reducir las dif locales a una dif global */
-        //MPI_Allreduce(&cambio_l, &cambio_g, 1, MPI_INT, MPI_LOR, MPI_COMM_WORLD);
+        MPI_Allreduce(&cambio_l, &cambio_g, 1, MPI_INT, MPI_LOR, MPI_COMM_WORLD);
 
         iter++;
 
-    } while ( cambio_l );
+    } while ( cambio_g );
 
     if ( rank == 0 ) {
         printf("iter %d\n", iter);
