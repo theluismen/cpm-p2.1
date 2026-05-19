@@ -23,7 +23,7 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
 
     do
     {
-        /**/
+        /* Agrupación de Elementos */
         for ( i = 0; i < n_valores; i++ )
         {
             min = 0;
@@ -47,6 +47,7 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
             volumen_l[i] = 0;
         }
 
+        /* Preparar Sumas y Totales */
         for ( i = 0; i < n_valores; i++ )
         {
             sumas_l[grupos_l[i]]   = sumas_l[grupos_l[i]] + valores[i];
@@ -58,6 +59,8 @@ void kmean_mpi ( int n_valores, int n_grupos, long valores[], long centros[], in
         /* Reducir las volumenes de datos locales a volumenes de datos globales */
         MPI_Allreduce(volumen_l, volumen_g, n_grupos, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 
+
+        /* Actualizar Centroides */
         dif_l = 0;
 
         for ( i = 0; i < n_grupos; i++ )
