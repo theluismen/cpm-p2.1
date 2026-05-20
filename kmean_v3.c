@@ -189,7 +189,7 @@ int main ( int argc, char** argv )
     }
 
     /* Liberar Memoria Dinámica */
-    free(valores_l);
+    //free(valores_l);
     /* Terminar entorno de MPI */
     MPI_Finalize();
 

@@ -5,7 +5,6 @@
 #define N 2000000   // Total de Valores: 2 Millones
 #define G 400       // Total de Grupos
 
-long *valores_g;    // Vector de los N valores ( rank=0 )
 long *valores_l;    // Vector de los N/nodos valores locales
 long centros[G];    // Vector para los centroides de cada grupo
 int  volumen_g[G];  // Vector para la cantidad de valores en cada grupo
@@ -142,6 +141,8 @@ int main ( int argc, char** argv )
     int i;
     int rank, nodos;
     int n_valores_l;    // Número de Valores Locales (N/nodos)
+    int local_idx = 0;
+    long valor_actual;
 
     /* Inicializar entorno MPI */
     MPI_Init(&argc, &argv);
@@ -150,27 +151,34 @@ int main ( int argc, char** argv )
 
     /* Calcular Porciones de Datos*/
     n_valores_l = N / nodos;
+    
     /* Asignar memoria a vector local de Valores */
     valores_l   = malloc( n_valores_l * sizeof(long) );
 
-    /* Proceso ROOT */
-    if ( rank == 0 ) {
-        /* Asignar memoria a vector global de Valores */
-        valores_g = malloc( N * sizeof(long) );
+    /* 
+     * Fijamos una semilla estática para que la secuencia generada por rand()
+     * sea idéntica en TODOS los procesos.
+     */
+    srand(1);
 
-        /* Inicializar N Valores */
-        for ( i = 0; i < N; i++ )
-            valores_g[i] = ( rand() % rand() ) / N;
+    /* 
+     * Todos los procesos generan los N valores para mantenerse sincronizados.
+     * Capturan los G centroides iniciales y solo la porción de datos
+     * locales (valores_l) que les corresponde, ahorrando memoria y red.
+     */
+    for ( i = 0; i < N; i++ ) {
+        valor_actual = ( rand() % rand() ) / N;
 
-        /* Inicializar G centroides */
-        for ( i = 0; i < G; i++ )
-            centros[i] = valores_g[i];
+        // Todos los procesos replican los G centroides iniciales
+        if ( i < G ) {
+            centros[i] = valor_actual;
+        }
+
+        // Cada proceso guarda solo su bloque local correspondiente
+        if ( i >= rank * n_valores_l && i < (rank + 1) * n_valores_l ) {
+            valores_l[local_idx++] = valor_actual;
+        }
     }
-
-    /* PARTICIONAR N Valores entre nodes nodos */
-    MPI_Scatter(valores_g, n_valores_l, MPI_LONG, valores_l, n_valores_l, MPI_LONG, 0, MPI_COMM_WORLD);
-    /* REPLICAR G Centroides a los nodes nodos */
-    MPI_Bcast(centros, G, MPI_LONG, 0, MPI_COMM_WORLD);
 
     /* Calcular G Grupos */
     kmean_mpi(n_valores_l, G, valores_l, centros, volumen_g, rank);
@@ -183,13 +191,11 @@ int main ( int argc, char** argv )
         /* Mostrar Resultados */
         for ( i = 0; i < G; i++ )
             printf("R[%d] : %ld tiene %d agrupados\n", i, centros[i], volumen_g[i]);
-
-        /* Liberar Memoria Dinámica */
-        free(valores_g);
     }
 
     /* Liberar Memoria Dinámica */
     free(valores_l);
+    
     /* Terminar entorno de MPI */
     MPI_Finalize();
 
